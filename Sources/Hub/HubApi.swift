@@ -22,7 +22,11 @@ public struct HubApi {
             self.downloadBase = downloadBase
         } else {
             let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            self.downloadBase = documents.appending(component: "huggingface")
+            if #available(iOS 16.0, macCatalyst 16.0, *) {
+                self.downloadBase = documents.appending(component: "huggingface")
+            } else {
+                self.downloadBase = documents.appendingPathComponent("huggingface")
+            }
         }
         self.endpoint = endpoint
         self.useBackgroundSession = useBackgroundSession
@@ -38,21 +42,33 @@ private extension HubApi {
             { ProcessInfo.processInfo.environment["HUGGING_FACE_HUB_TOKEN"] },
             {
                 ProcessInfo.processInfo.environment["HF_TOKEN_PATH"].flatMap {
-                    try? String(
-                        contentsOf: URL(filePath: NSString(string: $0).expandingTildeInPath),
-                        encoding: .utf8
-                    )
+                    if #available(iOS 16.0, macCatalyst 16.0, *) {
+                        try? String(
+                            contentsOf: URL(filePath: NSString(string: $0).expandingTildeInPath),
+                            encoding: .utf8
+                        )
+                    } else {
+                        nil
+                    }
                 }
             },
             {
                 ProcessInfo.processInfo.environment["HF_HOME"].flatMap {
-                    try? String(
-                        contentsOf: URL(filePath: NSString(string: $0).expandingTildeInPath).appending(path: "token"),
-                        encoding: .utf8
-                    )
+                    if #available(iOS 16.0, macCatalyst 16.0, *) {
+                        try? String(
+                            contentsOf: URL(filePath: NSString(string: $0).expandingTildeInPath).appending(path: "token"),
+                            encoding: .utf8
+                        )
+                    } else {
+                        nil
+                    }
                 }
             },
-            { try? String(contentsOf: .homeDirectory.appendingPathComponent(".huggingface/token"), encoding: .utf8) }
+            { if #available(iOS 16.0, macCatalyst 16.0, *) {
+                try? String(contentsOf: .homeDirectory.appendingPathComponent(".huggingface/token"), encoding: .utf8)
+            } else {
+                nil
+            } }
         ]
         return possibleTokens
             .lazy
@@ -143,7 +159,15 @@ public extension HubApi {
     /// Assumes the file has already been downloaded.
     /// `filename` is relative to the download base.
     func configuration(from filename: String, in repo: Repo) throws -> Config {
-        let fileURL = localRepoLocation(repo).appending(path: filename)
+        let base = localRepoLocation(repo)
+        
+        let fileURL: URL
+        if #available(iOS 16.0, macCatalyst 16.0, *) {
+            fileURL = base.appending(path: filename)
+        } else {
+            fileURL = base.appendingPathComponent(filename)
+        }
+        
         return try configuration(fileURL: fileURL)
     }
     
@@ -171,10 +195,17 @@ public extension HubApi {
     }
 }
 
-/// Snaphsot download
+/// Snapshot download
 public extension HubApi {
     func localRepoLocation(_ repo: Repo) -> URL {
-        downloadBase.appending(component: repo.type.rawValue).appending(component: repo.id)
+        let base: URL
+        if #available(iOS 16.0, macCatalyst 16.0, *) {
+            base = downloadBase.appending(component: repo.type.rawValue)
+            return base.appending(component: repo.id)
+        } else {
+            base = downloadBase.appendingPathComponent(repo.type.rawValue)
+            return base.appendingPathComponent(repo.id)
+        }
     }
     
     struct HubFileDownloader {
@@ -188,17 +219,34 @@ public extension HubApi {
         var source: URL {
             // https://huggingface.co/coreml-projects/Llama-2-7b-chat-coreml/resolve/main/tokenizer.json?download=true
             var url = URL(string: endpoint ?? "https://huggingface.co")!
+            
             if repo.type != .models {
-                url = url.appending(component: repo.type.rawValue)
+                if #available(iOS 16.0, macCatalyst 16.0, *) {
+                    url = url.appending(component: repo.type.rawValue)
+                } else {
+                    url = url.appendingPathComponent(repo.type.rawValue)
+                }
             }
-            url = url.appending(path: repo.id)
-            url = url.appending(path: "resolve/main") // TODO: revisions
-            url = url.appending(path: relativeFilename)
+            
+            if #available(iOS 16.0, macCatalyst 16.0, *) {
+                url = url.appending(path: repo.id)
+                url = url.appending(path: "resolve/main") // TODO: revisions
+                url = url.appending(path: relativeFilename)
+            } else {
+                url = url.appendingPathComponent(repo.id)
+                url = url.appendingPathComponent("resolve/main")
+                url = url.appendingPathComponent(relativeFilename)
+            }
+            
             return url
         }
         
         var destination: URL {
-            repoDestination.appending(path: relativeFilename)
+            if #available(iOS 16.0, macCatalyst 16.0, *) {
+                return repoDestination.appending(path: relativeFilename)
+            } else {
+                return repoDestination.appendingPathComponent(relativeFilename)
+            }
         }
         
         var downloaded: Bool {
@@ -210,9 +258,6 @@ public extension HubApi {
             try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true, attributes: nil)
         }
 
-        // Note we go from Combine in Downloader to callback-based progress reporting
-        // We'll probably need to support Combine as well to play well with Swift UI
-        // (See for example PipelineLoader in swift-coreml-diffusers)
         @discardableResult
         func download(progressHandler: @escaping (Double) -> Void) async throws -> URL {
             guard !downloaded else { return destination }
@@ -236,6 +281,7 @@ public extension HubApi {
         let filenames = try await getFilenames(from: repo, matching: globs)
         let progress = Progress(totalUnitCount: Int64(filenames.count))
         let repoDestination = localRepoLocation(repo)
+        
         for filename in filenames {
             let fileProgress = Progress(totalUnitCount: 100, parent: progress, pendingUnitCount: 1)
             let downloader = HubFileDownloader(
@@ -252,6 +298,7 @@ public extension HubApi {
             }
             fileProgress.completedUnitCount = 100
         }
+        
         progressHandler(progress)
         return repoDestination
     }
@@ -291,7 +338,21 @@ public extension HubApi {
 
     private func normalizeEtag(_ etag: String?) -> String? {
         guard let etag = etag else { return nil }
-        return etag.trimmingPrefix("W/").trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        if #available(iOS 16.0, macCatalyst 16.0, *) {
+            return etag.trimmingPrefix("W/").trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+        } else {
+            // Manually strip the "W/" prefix if present
+                let withoutWeakPrefix: String
+                if etag.hasPrefix("W/") {
+                    withoutWeakPrefix = String(etag.dropFirst(2)) // drop the first 2 chars
+                } else {
+                    withoutWeakPrefix = etag
+                }
+
+                // Trim surrounding quotes
+                let trimmed = withoutWeakPrefix.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                return trimmed.isEmpty ? nil : trimmed
+        }
     }
     
     func getFileMetadata(url: URL) async throws -> FileMetadata {
@@ -309,10 +370,26 @@ public extension HubApi {
     
     func getFileMetadata(from repo: Repo, matching globs: [String] = []) async throws -> [FileMetadata] {
         let files = try await getFilenames(from: repo, matching: globs)
-        let url = URL(string: "\(endpoint)/\(repo.id)/resolve/main")! // TODO: revisions
-        var selectedMetadata: Array<FileMetadata> = []
+        // We'll assume "resolve/main" for now
+        var url = URL(string: "\(endpoint)/\(repo.id)/resolve/main")!
+        
+        // If the user has a custom type, we might need to append it:
+        if repo.type != .models {
+            if #available(iOS 16.0, macCatalyst 16.0, *) {
+                url = url.appending(component: repo.type.rawValue)
+            } else {
+                url = url.appendingPathComponent(repo.type.rawValue)
+            }
+        }
+        
+        var selectedMetadata: [FileMetadata] = []
         for file in files {
-            let fileURL = url.appending(path: file)
+            let fileURL: URL
+            if #available(iOS 16.0, macCatalyst 16.0, *) {
+                fileURL = url.appending(path: file)
+            } else {
+                fileURL = url.appendingPathComponent(file)
+            }
             selectedMetadata.append(try await getFileMetadata(url: fileURL))
         }
         return selectedMetadata

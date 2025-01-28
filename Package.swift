@@ -5,7 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "swift-transformers",
-    platforms: [.iOS(.v16), .macOS(.v13)],
+    platforms: [.iOS(.v15), .macOS(.v13)],
     products: [
         .library(name: "Transformers", targets: ["Tokenizers", "Generation", "Models"]),
         .executable(name: "transformers", targets: ["TransformersCLI"]),
@@ -13,7 +13,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.4.0"),
-        .package(url: "https://github.com/johnmai-dev/Jinja", from: "1.1.0")
+        .package(url: "https://github.com/lukilabs/Jinja", branch: "main")
     ],
     targets: [
         .executableTarget(

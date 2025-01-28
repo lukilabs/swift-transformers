@@ -75,7 +75,11 @@ public extension LanguageModel {
            !description.isEmpty {
             return description
         }
-        return model.configuration.modelDisplayName ?? ""
+        if #available(iOS 16.0, macCatalyst 16.0, *) {
+            return model.configuration.modelDisplayName ?? ""
+        } else {
+            return ""
+        }
     }
     
     /// `name_or_path` in the Python world
@@ -85,7 +89,13 @@ public extension LanguageModel {
             return name
         }
         // This is usually the basename of the file, that's our best bet if no metadata exists
-        guard let modelName = model.configuration.modelDisplayName else { fatalError("Models must have a name that identifies them") }
+        guard let modelName = if #available(iOS 16.0, macCatalyst 16.0, *) {
+            model.configuration.modelDisplayName
+        } else {
+            fatalError("Models must have a name that identifies them")
+        } else {
+            fatalError("Models must have a name that identifies them")
+        }
         return modelName
     }
         

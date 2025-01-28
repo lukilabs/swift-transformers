@@ -73,7 +73,11 @@ class UnigramTokenizer: PreTrainedTokenizerModel {
         eosTokenId = eosToken == nil ? nil : tokensToIds[eosToken! as NSString]
 
         trie = Trie()
-        trie.append(contentsOf: vocab.map { $0.token })
+        if #available(iOS 16.0, macCatalyst 16.0.0, *) {
+            trie.append(contentsOf: vocab.map { $0.token })
+        } else {
+            // Fallback on earlier versions
+        }
     }
 
     func convertTokenToId(_ token: String) -> Int? {

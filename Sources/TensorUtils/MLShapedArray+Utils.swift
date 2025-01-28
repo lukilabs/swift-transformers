@@ -40,13 +40,17 @@ public extension MLMultiArray {
         guard self.dataType == .float32 else { return nil }
         
         var result: [Float] = Array(repeating: 0, count: self.count)
-        return self.withUnsafeBytes { ptr in
-            guard let source = ptr.baseAddress else { return nil }
-            result.withUnsafeMutableBytes { resultPtr in
-                let dest = resultPtr.baseAddress!
-                memcpy(dest, source, self.count * MemoryLayout<Float>.stride)
+        if #available(iOS 15.4, *) {
+            return self.withUnsafeBytes { ptr in
+                guard let source = ptr.baseAddress else { return nil }
+                result.withUnsafeMutableBytes { resultPtr in
+                    let dest = resultPtr.baseAddress!
+                    memcpy(dest, source, self.count * MemoryLayout<Float>.stride)
+                }
+                return result
             }
-            return result
+        } else {
+            return nil
         }
 
     }

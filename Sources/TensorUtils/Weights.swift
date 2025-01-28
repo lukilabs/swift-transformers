@@ -45,7 +45,11 @@ struct Safetensor {
                 get throws {
                     switch dtype {
                     case "I32", "U32": .int32
-                    case "F16": .float16
+                    case "F16": if #available(iOS 16.0, macCatalyst 16.0, *) {
+                        .float16
+                    } else {
+                        .float32
+                    }
                     case "F32": .float32
                     case "F64", "U64": .float64
                     default: throw Error.notSupported(message: "\(dtype ?? "empty")")
